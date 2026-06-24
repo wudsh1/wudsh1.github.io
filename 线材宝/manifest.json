@@ -1,0 +1,26 @@
+{
+  "name": "线材宝 - 切割计算排版",
+  "short_name": "线材宝",
+  "description": "线材切割优化排版工具 - 智能计算最佳切割方案",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#1e1e1c",
+  "background_color": "#f5f5f0",
+  "categories": ["utilities", "productivity"],
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
