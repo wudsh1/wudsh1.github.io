@@ -15,6 +15,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
 <style>
   :root {
@@ -738,9 +739,11 @@ function renderResults(data) {
     <div class="stat-card"><div class="stat-value" style="color:${utilization>=90?'var(--green)':utilization>=75?'var(--accent)':'var(--red)'}">${utilization.toFixed(1)}<span style="font-size:0.7rem;font-weight:400;">%</span></div><div class="stat-label">利用率</div></div>
     <div class="stat-card"><div class="stat-value stat-red">${(totalWaste/1000).toFixed(2)}<span style="font-size:0.7rem;font-weight:400;"> m</span></div><div class="stat-label">总损耗</div></div>
   </div>
-  <div style="display:flex;gap:8px;margin-bottom:14px;">
-    <button class="btn btn-outline btn-sm" onclick="copyPlan()">📋 复制排版方案</button>
-    <button class="btn btn-outline btn-sm" onclick="window.print()">🖨️ 打印</button>
+  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+    <button class="btn btn-outline btn-sm" onclick="copyPlan()">📋 复制方案</button>
+    <button class="btn btn-outline btn-sm" onclick="savePDF()">📄 保存 PDF</button>
+    <button class="btn btn-outline btn-sm" onclick="savePNG()">🖼️ 保存 PNG</button>
+    <button class="btn btn-outline btn-sm" onclick="doPrint()">🖨️ 打印</button>
   </div>`;
 
   // Detail table
@@ -830,6 +833,65 @@ function showError(msg) {
   container.style.display = 'block';
   container.className = 'fade-in';
   container.innerHTML = `<div class="error-msg">⚠️ ${msg}</div>`;
+}
+
+// ─── Save PDF (via print dialog → user selects "Save as PDF") ───
+// On Android Chrome, the print dialog includes "Save as PDF" natively.
+// On APK, this delegates to native Android PrintManager.
+function savePDF() {
+  // Check if running inside APK with native bridge
+  if (window.AndroidBridge && window.AndroidBridge.savePDF) {
+    window.AndroidBridge.savePDF();
+    return;
+  }
+  // Fallback: browser print dialog (works on Chrome Android → Save as PDF)
+  window.print();
+}
+
+// ─── Save PNG (screenshot of results) ───
+async function savePNG() {
+  // Check if running inside APK with native bridge
+  if (window.AndroidBridge && window.AndroidBridge.savePNG) {
+    window.AndroidBridge.savePNG();
+    return;
+  }
+  // Fallback: html2canvas
+  const results = document.getElementById('results');
+  if (!results || results.style.display === 'none') return;
+
+  const btn = event && event.target;
+  if (btn) { const orig = btn.innerHTML; btn.innerHTML = '⏳ 生成中...'; }
+
+  try {
+    const canvas = await html2canvas(results, {
+      backgroundColor: '#f5f5f0',
+      scale: 2,
+      useCORS: true,
+      logging: false,
+    });
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '线材宝-排版方案.png';
+      a.click();
+      URL.revokeObjectURL(url);
+      if (btn) btn.innerHTML = '✅ 已保存！';
+      setTimeout(() => { if (btn) btn.innerHTML = '🖼️ 保存 PNG'; }, 1500);
+    }, 'image/png');
+  } catch (e) {
+    if (btn) btn.innerHTML = '🖼️ 保存 PNG';
+    alert('保存失败，请尝试截图。');
+  }
+}
+
+// ─── Print (native or browser) ───
+function doPrint() {
+  if (window.AndroidBridge && window.AndroidBridge.print) {
+    window.AndroidBridge.print();
+    return;
+  }
+  window.print();
 }
 
 // ─── Copy plan ───
