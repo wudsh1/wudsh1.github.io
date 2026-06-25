@@ -381,13 +381,14 @@
     .header { padding: 8px 10px; }
   }
 
-  /* Print */
+  /* Print — clean output, only results */
   @media print {
-    .header, .main > :first-child, .optimize-area, .add-btn, .btn-ghost, .presets,
-    .optimize-area-sticky, .install-banner { display: none; }
-    .main { display: block; padding: 0; max-width: 100%; }
+    .header, .sidebar, .optimize-area, .add-btn, .btn-ghost, .presets,
+    .optimize-area-sticky, .install-banner,
+    .no-print { display: none !important; }
+    .main { display: block !important; padding: 0; max-width: 100%; }
     .card { box-shadow: none; break-inside: avoid; }
-    body { background: #fff; }
+    body { background: #fff; font-size: 12px; }
     .bar-wrap { border: 1px solid #ccc; }
   }
 
@@ -770,7 +771,7 @@ function renderResults(data) {
     <div class="stat-card"><div class="stat-value" style="color:${utilization>=90?'var(--green)':utilization>=75?'var(--accent)':'var(--red)'}">${utilization.toFixed(1)}<span style="font-size:0.7rem;font-weight:400;">%</span></div><div class="stat-label">利用率</div></div>
     <div class="stat-card"><div class="stat-value stat-red">${(totalWaste/1000).toFixed(2)}<span style="font-size:0.7rem;font-weight:400;"> m</span></div><div class="stat-label">总损耗</div></div>
   </div>
-  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+  <div class="no-print" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
     <button class="btn btn-outline btn-sm" onclick="copyPlan()">📋 复制方案</button>
     <button class="btn btn-outline btn-sm" onclick="savePDF()">📄 保存 PDF</button>
     <button class="btn btn-outline btn-sm" onclick="savePNG()">🖼️ 保存 PNG</button>
@@ -791,7 +792,7 @@ function renderResults(data) {
   // Cutting plan — compact list by default, expandable to bars
   const planId = 'plan-' + Date.now();
   html += `<div class="card"><div class="card-header"><span class="icon">📐</span> 切割排版图 <span style="font-size:0.68rem;font-weight:500;padding:2px 8px;border-radius:12px;background:#f0ede7;color:var(--text-muted);">${raws.length} 根原材料</span>
-    <button class="collapse-toggle" id="toggle-${planId}" onclick="togglePlan('${planId}')">📊 展开图形</button>
+    <button class="collapse-toggle no-print" id="toggle-${planId}" onclick="togglePlan('${planId}')">📊 展开图形</button>
   </div>
   <div class="card-body">
     <div class="compact-list" id="compact-${planId}">`;
@@ -874,17 +875,34 @@ function showError(msg) {
   container.innerHTML = `<div class="error-msg">⚠️ ${msg}</div>`;
 }
 
-// ─── Save PDF (via print dialog → user selects "Save as PDF") ───
-// On Android Chrome, the print dialog includes "Save as PDF" natively.
-// On APK, this delegates to native Android PrintManager.
+// ─── Save PDF — auto-expand bars, then print ───
 function savePDF() {
-  // Check if running inside APK with native bridge
+  expandAllForPrint();
   if (window.AndroidBridge && window.AndroidBridge.savePDF) {
     window.AndroidBridge.savePDF();
     return;
   }
-  // Fallback: browser print dialog (works on Chrome Android → Save as PDF)
   window.print();
+}
+
+// ─── Print — auto-expand bars, then print ───
+function doPrint() {
+  expandAllForPrint();
+  if (window.AndroidBridge && window.AndroidBridge.print) {
+    window.AndroidBridge.print();
+    return;
+  }
+  window.print();
+}
+
+// Helper: expand all collapsed bars and hide compact lists (for clean printing)
+function expandAllForPrint() {
+  document.querySelectorAll('.collapsible-content.collapsed').forEach(function(el) {
+    el.classList.remove('collapsed');
+  });
+  document.querySelectorAll('.compact-list').forEach(function(el) {
+    el.style.display = 'none';
+  });
 }
 
 // ─── Save PNG (full-page screenshot including scrolled content) ───
@@ -922,15 +940,6 @@ async function savePNG() {
     if (btn) btn.innerHTML = '🖼️ 保存 PNG';
     alert('保存失败: ' + e.message);
   }
-}
-
-// ─── Print (native or browser) ───
-function doPrint() {
-  if (window.AndroidBridge && window.AndroidBridge.print) {
-    window.AndroidBridge.print();
-    return;
-  }
-  window.print();
 }
 
 // ─── Copy plan ───
