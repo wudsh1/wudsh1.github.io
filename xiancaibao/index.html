@@ -808,9 +808,13 @@ function renderResults(data) {
       groups.push({ length: raw.cuts[gi].length, count: gj - gi });
       gi = gj;
     }
-    const summary = groups.map(g => `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:2px;vertical-align:middle;background:${['#d4641a','#2d7fa8','#5a8a3c','#8b5ea8','#c47a2a','#3d8690','#a8543c','#4a7a5a','#6e5c9a','#b06830','#25667a','#6e8638','#9a5480','#7a5a3a','#3a6a7a'][ri%15]}"></span> <b>#${ri+1}</b> ${(totalLen/1000).toFixed(2)}m → ${usedLen>=0.01?(usedLen/1000).toFixed(2):'0'}m &nbsp;` +
-      groups.map(g => `${g.length}mm${g.count>1?'×'+g.count:''}`).join(' + ') +
-      (raw.remaining > 1 ? ` &nbsp;<span style="color:var(--red);">余${raw.remaining.toFixed(0)}mm</span>` : '');
+    var color = ['#d4641a','#2d7fa8','#5a8a3c','#8b5ea8','#c47a2a','#3d8690','#a8543c','#4a7a5a','#6e5c9a','#b06830','#25667a','#6e8638','#9a5480','#7a5a3a','#3a6a7a'][ri%15];
+    var totalM = (totalLen/1000).toFixed(2);
+    var usedM = usedLen >= 0.01 ? (usedLen/1000).toFixed(2) : '0';
+    var pieceStr = groups.map(function(g){ return g.length+'mm'+(g.count>1?' x'+g.count:''); }).join(' + ');
+    var wasteStr = raw.remaining > 1 ? ' <span style="color:var(--red);">余'+raw.remaining.toFixed(0)+'mm</span>' : '';
+    var dot = '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:2px;vertical-align:middle;background:'+color+';"></span>';
+    var summary = dot+' <b>#'+(ri+1)+'</b> '+totalM+'m '+String.fromCharCode(8594)+' '+usedM+'m &nbsp;'+pieceStr+wasteStr;
     html += `<div style="margin-bottom:4px;">${summary}</div>`;
   });
 
@@ -883,19 +887,17 @@ function savePDF() {
   window.print();
 }
 
-// ─── Save PNG (screenshot of results) ───
+// ─── Save PNG (full-page screenshot including scrolled content) ───
 async function savePNG() {
-  // Check if running inside APK with native bridge
   if (window.AndroidBridge && window.AndroidBridge.savePNG) {
     window.AndroidBridge.savePNG();
     return;
   }
-  // Fallback: html2canvas
   const results = document.getElementById('results');
   if (!results || results.style.display === 'none') return;
 
   const btn = event && event.target;
-  if (btn) { const orig = btn.innerHTML; btn.innerHTML = '⏳ 生成中...'; }
+  if (btn) { btn.innerHTML = '⏳ 生成中...'; }
 
   try {
     const canvas = await html2canvas(results, {
@@ -903,6 +905,8 @@ async function savePNG() {
       scale: 2,
       useCORS: true,
       logging: false,
+      height: results.scrollHeight,
+      windowHeight: results.scrollHeight,
     });
     canvas.toBlob(blob => {
       const url = URL.createObjectURL(blob);
@@ -916,7 +920,7 @@ async function savePNG() {
     }, 'image/png');
   } catch (e) {
     if (btn) btn.innerHTML = '🖼️ 保存 PNG';
-    alert('保存失败，请尝试截图。');
+    alert('保存失败: ' + e.message);
   }
 }
 
