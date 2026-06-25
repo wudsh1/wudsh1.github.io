@@ -383,6 +383,7 @@
 
   /* Print — clean output, only results */
   @media print {
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .header, .sidebar, .optimize-area, .add-btn, .btn-ghost, .presets,
     .optimize-area-sticky, .install-banner,
     .no-print { display: none !important; }
