@@ -15,6 +15,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
 <style>
   :root {
@@ -100,6 +101,36 @@
     gap: 20px;
     align-items: start;
   }
+
+  /* Sticky sidebar on desktop */
+  .sidebar {
+    position: sticky;
+    top: 70px;
+    max-height: calc(100vh - 90px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    padding-right: 4px;
+  }
+
+  /* Collapsible section */
+  .collapse-toggle {
+    margin-left: auto;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--accent);
+    cursor: pointer;
+    padding: 2px 10px;
+    border-radius: 12px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    font-family: var(--font);
+    transition: all var(--transition);
+    white-space: nowrap;
+  }
+  .collapse-toggle:hover { background: var(--accent-light); }
+  .collapsible-content.collapsed { display: none; }
+  .compact-list { font-size: 0.76rem; color: var(--text-muted); line-height: 1.6; }
+  .compact-list span { display: inline-block; margin-right: 3px; }
 
   /* ─── Card ─── */
   .card {
@@ -309,6 +340,7 @@
   /* ─── Mobile layout ─── */
   @media (max-width: 960px) {
     .main { grid-template-columns: 1fr; padding: 12px; gap: 14px; }
+    .sidebar { position: static; max-height: none; overflow: visible; }
     .stats-row { grid-template-columns: repeat(2, 1fr); }
     .header { padding: calc(10px + var(--safe-top)) 12px 10px; }
     .header h1 { font-size: 1.05rem; }
@@ -385,7 +417,7 @@
 <div class="main">
 
   <!-- ── Left: Input Panel ── -->
-  <div>
+  <div class="sidebar">
 
     <!-- Raw material card -->
     <div class="card" style="margin-bottom: 14px;">
@@ -738,9 +770,11 @@ function renderResults(data) {
     <div class="stat-card"><div class="stat-value" style="color:${utilization>=90?'var(--green)':utilization>=75?'var(--accent)':'var(--red)'}">${utilization.toFixed(1)}<span style="font-size:0.7rem;font-weight:400;">%</span></div><div class="stat-label">利用率</div></div>
     <div class="stat-card"><div class="stat-value stat-red">${(totalWaste/1000).toFixed(2)}<span style="font-size:0.7rem;font-weight:400;"> m</span></div><div class="stat-label">总损耗</div></div>
   </div>
-  <div style="display:flex;gap:8px;margin-bottom:14px;">
-    <button class="btn btn-outline btn-sm" onclick="copyPlan()">📋 复制排版方案</button>
-    <button class="btn btn-outline btn-sm" onclick="window.print()">🖨️ 打印</button>
+  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+    <button class="btn btn-outline btn-sm" onclick="copyPlan()">📋 复制方案</button>
+    <button class="btn btn-outline btn-sm" onclick="savePDF()">📄 保存 PDF</button>
+    <button class="btn btn-outline btn-sm" onclick="savePNG()">🖼️ 保存 PNG</button>
+    <button class="btn btn-outline btn-sm" onclick="doPrint()">🖨️ 打印</button>
   </div>`;
 
   // Detail table
@@ -754,35 +788,55 @@ function renderResults(data) {
     <tr><td>余料</td><td class="mono">${(raws.reduce((s,r)=>s+r.remaining,0)/1000).toFixed(3)} m</td><td>${(raws.reduce((s,r)=>s+r.remaining,0)/totalRawLength*100).toFixed(2)}%</td></tr>
     </tbody></table></div></div>`;
 
-  // Cutting plan
-  html += `<div class="card"><div class="card-header"><span class="icon">📐</span> 切割排版图 <span style="font-size:0.68rem;font-weight:500;padding:2px 8px;border-radius:12px;background:#f0ede7;color:var(--text-muted);">${raws.length} 根原材料</span></div>
-    <div class="card-body"><div class="bar-container">`;
+  // Cutting plan — compact list by default, expandable to bars
+  const planId = 'plan-' + Date.now();
+  html += `<div class="card"><div class="card-header"><span class="icon">📐</span> 切割排版图 <span style="font-size:0.68rem;font-weight:500;padding:2px 8px;border-radius:12px;background:#f0ede7;color:var(--text-muted);">${raws.length} 根原材料</span>
+    <button class="collapse-toggle" id="toggle-${planId}" onclick="togglePlan('${planId}')">📊 展开图形</button>
+  </div>
+  <div class="card-body">
+    <div class="compact-list" id="compact-${planId}">`;
 
+  // Build compact text list
   raws.forEach((raw, ri) => {
     const totalLen = raw.totalLength;
-
-    // Group consecutive same-length cuts
-    let groups = [];
+    const usedLen = totalLen - raw.remaining;
+    const groups = [];
     let gi = 0;
     while (gi < raw.cuts.length) {
       let gj = gi;
       while (gj < raw.cuts.length && raw.cuts[gj].length === raw.cuts[gi].length) gj++;
-      const count = gj - gi;
-      groups.push({
-        length: raw.cuts[gi].length,
-        count: count,
-        totalWidth: raw.cuts[gi].length * count + (count - 1) * kerf,
-      });
+      groups.push({ length: raw.cuts[gi].length, count: gj - gi });
       gi = gj;
     }
+    var color = ['#d4641a','#2d7fa8','#5a8a3c','#8b5ea8','#c47a2a','#3d8690','#a8543c','#4a7a5a','#6e5c9a','#b06830','#25667a','#6e8638','#9a5480','#7a5a3a','#3a6a7a'][ri%15];
+    var totalM = (totalLen/1000).toFixed(2);
+    var usedM = usedLen >= 0.01 ? (usedLen/1000).toFixed(2) : '0';
+    var pieceStr = groups.map(function(g){ return g.length+'mm'+(g.count>1?' x'+g.count:''); }).join(' + ');
+    var wasteStr = raw.remaining > 1 ? ' <span style="color:var(--red);">余'+raw.remaining.toFixed(0)+'mm</span>' : '';
+    var dot = '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:2px;vertical-align:middle;background:'+color+';"></span>';
+    var summary = dot+' <b>#'+(ri+1)+'</b> '+totalM+'m '+String.fromCharCode(8594)+' '+usedM+'m &nbsp;'+pieceStr+wasteStr;
+    html += `<div style="margin-bottom:4px;">${summary}</div>`;
+  });
 
-    // Build visual bar: merge kerf into group width
+  html += `</div>
+    <div class="collapsible-content collapsed" id="bars-${planId}"><div class="bar-container" style="margin-top:12px;">`;
+
+  // Build bar visualization (hidden by default)
+  raws.forEach((raw, ri) => {
+    const totalLen = raw.totalLength;
+    let groups = [];
+    let gi2 = 0;
+    while (gi2 < raw.cuts.length) {
+      let gj = gi2;
+      while (gj < raw.cuts.length && raw.cuts[gj].length === raw.cuts[gi2].length) gj++;
+      const count = gj - gi2;
+      groups.push({ length: raw.cuts[gi2].length, count: count, totalWidth: raw.cuts[gi2].length * count + (count - 1) * kerf });
+      gi2 = gj;
+    }
     let barSegs = '';
     if (endTrim > 0) barSegs += `<div class="segment waste" style="width:${(endTrim/totalLen*100).toFixed(2)}%;" title="端头损耗 ${endTrim}mm">端</div>`;
-
     let groupIdx = 0;
     groups.forEach((g, gi) => {
-      // kerf before this group (between groups)
       if (gi > 0 && kerf > 0) {
         const kpct = (kerf/totalLen*100).toFixed(2);
         if (parseFloat(kpct) > 0.2) barSegs += `<div class="segment kerf" style="width:${kpct}%;" title="锯缝 ${kerf}mm"></div>`;
@@ -793,25 +847,13 @@ function renderResults(data) {
       const label = g.totalWidth >= totalLen * 0.07 ? (g.count > 1 ? `${g.length}×${g.count}` : `${g.length}`) : '';
       barSegs += `<div class="segment ${cc}" style="width:${pct}%;" title="${g.length}mm × ${g.count}">${label}</div>`;
     });
-
     if (raw.remaining > 0) barSegs += `<div class="segment waste" style="width:${(raw.remaining/totalLen*100).toFixed(2)}%;" title="余料 ${raw.remaining.toFixed(0)}mm">${raw.remaining.toFixed(0)}</div>`;
     if (endTrim > 0) barSegs += `<div class="segment waste" style="width:${(endTrim/totalLen*100).toFixed(2)}%;" title="端头损耗 ${endTrim}mm">端</div>`;
-
-    const usedLen = raw.totalLength - raw.remaining;
+    const usedLen = totalLen - raw.remaining;
     html += `<div class="bar-row"><div class="bar-label">#${ri+1}</div><div class="bar-wrap">${barSegs}</div><div class="bar-info">${(totalLen/1000).toFixed(2)}m→用${(usedLen/1000).toFixed(2)}m</div></div>`;
-
-    // Text summary: group same-length
-    const cutSummary = groups.map((g, gi) => {
-      const cc = getColor(g.length, gi);
-      const cnt = g.count > 1 ? ` ×${g.count}` : '';
-      return `<span class="${cc}" style="display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:2px;vertical-align:middle;"></span> ${g.length}mm${cnt}`;
-    }).join(' │ ');
-    if (raw.cuts.length > 0) {
-      html += `<div style="margin-left:58px;margin-bottom:10px;font-size:0.72rem;color:var(--text-muted);padding:4px 8px;background:#fafaf7;border-radius:4px;">${cutSummary}${raw.remaining>1?` │ <span style="color:var(--red);">余${raw.remaining.toFixed(0)}mm</span>`:''}</div>`;
-    }
   });
 
-  html += `</div></div></div>`;
+  html += `</div></div></div></div>`;
 
   // Legend
   html += `<div class="card" style="margin-top:14px;"><div class="card-header"><span class="icon">🎨</span> 图例</div>
@@ -830,6 +872,65 @@ function showError(msg) {
   container.style.display = 'block';
   container.className = 'fade-in';
   container.innerHTML = `<div class="error-msg">⚠️ ${msg}</div>`;
+}
+
+// ─── Save PDF (via print dialog → user selects "Save as PDF") ───
+// On Android Chrome, the print dialog includes "Save as PDF" natively.
+// On APK, this delegates to native Android PrintManager.
+function savePDF() {
+  // Check if running inside APK with native bridge
+  if (window.AndroidBridge && window.AndroidBridge.savePDF) {
+    window.AndroidBridge.savePDF();
+    return;
+  }
+  // Fallback: browser print dialog (works on Chrome Android → Save as PDF)
+  window.print();
+}
+
+// ─── Save PNG (full-page screenshot including scrolled content) ───
+async function savePNG() {
+  if (window.AndroidBridge && window.AndroidBridge.savePNG) {
+    window.AndroidBridge.savePNG();
+    return;
+  }
+  const results = document.getElementById('results');
+  if (!results || results.style.display === 'none') return;
+
+  const btn = event && event.target;
+  if (btn) { btn.innerHTML = '⏳ 生成中...'; }
+
+  try {
+    const canvas = await html2canvas(results, {
+      backgroundColor: '#f5f5f0',
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      height: results.scrollHeight,
+      windowHeight: results.scrollHeight,
+    });
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '线材宝-排版方案.png';
+      a.click();
+      URL.revokeObjectURL(url);
+      if (btn) btn.innerHTML = '✅ 已保存！';
+      setTimeout(() => { if (btn) btn.innerHTML = '🖼️ 保存 PNG'; }, 1500);
+    }, 'image/png');
+  } catch (e) {
+    if (btn) btn.innerHTML = '🖼️ 保存 PNG';
+    alert('保存失败: ' + e.message);
+  }
+}
+
+// ─── Print (native or browser) ───
+function doPrint() {
+  if (window.AndroidBridge && window.AndroidBridge.print) {
+    window.AndroidBridge.print();
+    return;
+  }
+  window.print();
 }
 
 // ─── Copy plan ───
@@ -863,6 +964,24 @@ function copyPlan() {
       }
     });
   }).catch(() => alert('复制失败，请手动选择文字复制。'));
+}
+
+// ─── Toggle plan view: compact ↔ bar visualization ───
+function togglePlan(id) {
+  const compact = document.getElementById('compact-' + id);
+  const bars = document.getElementById('bars-' + id);
+  const toggle = document.getElementById('toggle-' + id);
+  if (!compact || !bars || !toggle) return;
+  const isCollapsed = bars.classList.contains('collapsed');
+  if (isCollapsed) {
+    bars.classList.remove('collapsed');
+    compact.style.display = 'none';
+    toggle.innerHTML = '📋 收起图形';
+  } else {
+    bars.classList.add('collapsed');
+    compact.style.display = '';
+    toggle.innerHTML = '📊 展开图形';
+  }
 }
 
 // ─── Start ───
