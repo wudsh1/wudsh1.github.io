@@ -790,16 +790,29 @@ function renderResults(data) {
     <tr><td>余料</td><td class="mono">${(raws.reduce((s,r)=>s+r.remaining,0)/1000).toFixed(3)} m</td><td>${(raws.reduce((s,r)=>s+r.remaining,0)/totalRawLength*100).toFixed(2)}%</td></tr>
     </tbody></table></div></div>`;
 
-  // Cutting plan — compact list by default, expandable to bars
+  // Cutting plan — group identical layouts, compact list by default
   const planId = 'plan-' + Date.now();
-  html += `<div class="card"><div class="card-header"><span class="icon">📐</span> 切割排版图 <span style="font-size:0.68rem;font-weight:500;padding:2px 8px;border-radius:12px;background:#f0ede7;color:var(--text-muted);">${raws.length} 根原材料</span>
+
+  // Group raw instances by identical cutting pattern
+  const patternMap = new Map();
+  raws.forEach((raw) => {
+    const cutsKey = raw.cuts.map(c => c.length).join(',') + '|' + raw.remaining.toFixed(0);
+    if (!patternMap.has(cutsKey)) {
+      patternMap.set(cutsKey, { raw: raw, count: 0 });
+    }
+    patternMap.get(cutsKey).count++;
+  });
+  const patterns = Array.from(patternMap.values());
+
+  html += `<div class="card"><div class="card-header"><span class="icon">📐</span> 切割排版图 <span style="font-size:0.68rem;font-weight:500;padding:2px 8px;border-radius:12px;background:#f0ede7;color:var(--text-muted);">${raws.length} 根 · ${patterns.length} 种排法</span>
     <button class="collapse-toggle no-print" id="toggle-${planId}" onclick="togglePlan('${planId}')">📊 展开图形</button>
   </div>
   <div class="card-body">
     <div class="compact-list" id="compact-${planId}">`;
 
-  // Build compact text list
-  raws.forEach((raw, ri) => {
+  // Compact list — grouped
+  patterns.forEach((pat, pi) => {
+    const raw = pat.raw;
     const totalLen = raw.totalLength;
     const usedLen = totalLen - raw.remaining;
     const groups = [];
@@ -810,49 +823,49 @@ function renderResults(data) {
       groups.push({ length: raw.cuts[gi].length, count: gj - gi });
       gi = gj;
     }
-    var color = ['#d4641a','#2d7fa8','#5a8a3c','#8b5ea8','#c47a2a','#3d8690','#a8543c','#4a7a5a','#6e5c9a','#b06830','#25667a','#6e8638','#9a5480','#7a5a3a','#3a6a7a'][ri%15];
-    var totalM = (totalLen/1000).toFixed(2);
-    var usedM = usedLen >= 0.01 ? (usedLen/1000).toFixed(2) : '0';
-    var pieceStr = groups.map(function(g){ return g.length+'mm'+(g.count>1?' x'+g.count:''); }).join(' + ');
-    var wasteStr = raw.remaining > 1 ? ' <span style="color:var(--red);">余'+raw.remaining.toFixed(0)+'mm</span>' : '';
+    var color = ['#d4641a','#2d7fa8','#5a8a3c','#8b5ea8','#c47a2a','#3d8690','#a8543c','#4a7a5a','#6e5c9a','#b06830','#25667a','#6e8638','#9a5480','#7a5a3a','#3a6a7a'][pi%15];
     var dot = '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:2px;vertical-align:middle;background:'+color+';"></span>';
-    var summary = dot+' <b>#'+(ri+1)+'</b> '+totalM+'m '+String.fromCharCode(8594)+' '+usedM+'m &nbsp;'+pieceStr+wasteStr;
-    html += `<div style="margin-bottom:4px;">${summary}</div>`;
+    var pieceStr = groups.map(function(g){ return g.length+'mm'+(g.count>1?'×'+g.count:''); }).join(' + ');
+    var wasteStr = raw.remaining > 1 ? ' <span style="color:var(--red);">余'+raw.remaining.toFixed(0)+'mm</span>' : '';
+    var cntStr = pat.count > 1 ? ' <b>×'+pat.count+'根</b>' : '';
+    html += '<div style="margin-bottom:4px;">'+dot+' '+pieceStr+wasteStr+cntStr+'</div>';
   });
 
   html += `</div>
     <div class="collapsible-content collapsed" id="bars-${planId}"><div class="bar-container" style="margin-top:12px;">`;
 
-  // Build bar visualization (hidden by default)
-  raws.forEach((raw, ri) => {
+  // Bar visualization — grouped
+  patterns.forEach((pat, pi) => {
+    const raw = pat.raw;
     const totalLen = raw.totalLength;
     let groups = [];
     let gi2 = 0;
     while (gi2 < raw.cuts.length) {
       let gj = gi2;
       while (gj < raw.cuts.length && raw.cuts[gj].length === raw.cuts[gi2].length) gj++;
-      const count = gj - gi2;
-      groups.push({ length: raw.cuts[gi2].length, count: count, totalWidth: raw.cuts[gi2].length * count + (count - 1) * kerf });
+      groups.push({ length: raw.cuts[gi2].length, count: gj - gi2, totalWidth: raw.cuts[gi2].length * (gj - gi2) + (gj - gi2 - 1) * kerf });
       gi2 = gj;
     }
     let barSegs = '';
-    if (endTrim > 0) barSegs += `<div class="segment waste" style="width:${(endTrim/totalLen*100).toFixed(2)}%;" title="端头损耗 ${endTrim}mm">端</div>`;
+    if (endTrim > 0) barSegs += '<div class="segment waste" style="width:'+(endTrim/totalLen*100).toFixed(2)+'%;" title="端头损耗 '+endTrim+'mm">端</div>';
     let groupIdx = 0;
     groups.forEach((g, gi) => {
       if (gi > 0 && kerf > 0) {
-        const kpct = (kerf/totalLen*100).toFixed(2);
-        if (parseFloat(kpct) > 0.2) barSegs += `<div class="segment kerf" style="width:${kpct}%;" title="锯缝 ${kerf}mm"></div>`;
+        var kpct = (kerf/totalLen*100).toFixed(2);
+        if (parseFloat(kpct) > 0.2) barSegs += '<div class="segment kerf" style="width:'+kpct+'%;" title="锯缝 '+kerf+'mm"></div>';
       }
-      const pct = (g.totalWidth/totalLen*100).toFixed(2);
-      const cc = getColor(g.length, groupIdx);
+      var pct = (g.totalWidth/totalLen*100).toFixed(2);
+      var cc = getColor(g.length, groupIdx);
       groupIdx += g.count;
-      const label = g.totalWidth >= totalLen * 0.07 ? (g.count > 1 ? `${g.length}×${g.count}` : `${g.length}`) : '';
-      barSegs += `<div class="segment ${cc}" style="width:${pct}%;" title="${g.length}mm × ${g.count}">${label}</div>`;
+      var label = g.totalWidth >= totalLen * 0.07 ? (g.count > 1 ? g.length+'×'+g.count : ''+g.length) : '';
+      barSegs += '<div class="segment '+cc+'" style="width:'+pct+'%;" title="'+g.length+'mm × '+g.count+'">'+label+'</div>';
     });
-    if (raw.remaining > 0) barSegs += `<div class="segment waste" style="width:${(raw.remaining/totalLen*100).toFixed(2)}%;" title="余料 ${raw.remaining.toFixed(0)}mm">${raw.remaining.toFixed(0)}</div>`;
-    if (endTrim > 0) barSegs += `<div class="segment waste" style="width:${(endTrim/totalLen*100).toFixed(2)}%;" title="端头损耗 ${endTrim}mm">端</div>`;
+    if (raw.remaining > 0) barSegs += '<div class="segment waste" style="width:'+(raw.remaining/totalLen*100).toFixed(2)+'%;" title="余料 '+raw.remaining.toFixed(0)+'mm">'+raw.remaining.toFixed(0)+'</div>';
+    if (endTrim > 0) barSegs += '<div class="segment waste" style="width:'+(endTrim/totalLen*100).toFixed(2)+'%;" title="端头损耗 '+endTrim+'mm">端</div>';
     const usedLen = totalLen - raw.remaining;
-    html += `<div class="bar-row"><div class="bar-label">#${ri+1}</div><div class="bar-wrap">${barSegs}</div><div class="bar-info">${(totalLen/1000).toFixed(2)}m→用${(usedLen/1000).toFixed(2)}m</div></div>`;
+    var labelTxt = '#'+(pi+1);
+    if (pat.count > 1) labelTxt += ' ×'+pat.count;
+    html += '<div class="bar-row"><div class="bar-label">'+labelTxt+'</div><div class="bar-wrap">'+barSegs+'</div><div class="bar-info">'+(totalLen/1000).toFixed(2)+'m→用'+(usedLen/1000).toFixed(2)+'m</div></div>';
   });
 
   html += `</div></div></div></div>`;
@@ -960,9 +973,10 @@ function copyPlan() {
     const cells = row.querySelectorAll('td');
     if (cells.length >= 3) text += `${cells[0].textContent.padEnd(14)} ${cells[1].textContent.padEnd(12)} ${cells[2].textContent}\n`;
   });
-  text += '\n';
-  results.querySelectorAll('.bar-row').forEach((barRow, i) => {
-    text += `${barRow.querySelector('.bar-label')?.textContent||'#'+(i+1)}  ${barRow.querySelector('.bar-info')?.textContent||''}\n`;
+  text += '\n── 切割方案 ──\n';
+  const compactItems = results.querySelectorAll('.compact-list div');
+  compactItems.forEach(function(item) {
+    text += item.textContent.trim().replace(/\s+/g, ' ') + '\n';
   });
   navigator.clipboard.writeText(text).then(() => {
     const btns = document.querySelectorAll('.btn-outline');
